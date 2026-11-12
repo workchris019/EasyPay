@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EasyPay checkout</title>
+<style>
+  :root {
+    --bg: #0f2a2c; --card: #ffffff; --ink: #14211f; --muted: #5b6b68;
+    --line: #dfe6e4; --accent: #ffcb05; --accent-ink: #1b1600; --ok: #17794b; --bad: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; display: grid; place-items: center; padding: 20px; }
+  main { width: 100%; max-width: 420px; }
+  .brand { color: #cfe3df; font-weight: 700; letter-spacing: .02em; margin: 0 4px 12px; }
+  .card { background: var(--card); border-radius: 14px; padding: 28px 24px; }
+  h1 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 4px; }
+  .amount { font-size: 44px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin: 0 0 4px; }
+  .desc { color: var(--muted); margin: 0 0 22px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 10px; }
+  input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #1a6b73; outline-offset: 2px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 6px 0 18px; }
+  button.primary { width: 100%; font: inherit; font-weight: 700; font-size: 17px; padding: 14px; border: 0; border-radius: 10px;
+                   background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+  button.primary:disabled { opacity: .6; cursor: wait; }
+  button.ghost { width: 100%; font: inherit; padding: 12px; margin-top: 10px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .error { color: var(--bad); margin: 12px 0 0; min-height: 1.5em; }
+  .dest { border: 1.5px solid var(--ink); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+  .dest .who { font-size: 20px; font-weight: 700; margin: 0; }
+  .dest .num { color: var(--muted); margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; font-size: 13px; margin-top: 8px; color: var(--ok); font-weight: 600; }
+  .tag.warn { color: var(--muted); font-weight: 500; }
+  .row { display: flex; justify-content: space-between; color: var(--muted); font-size: 15px; margin: 4px 0; }
+  .row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .big { font-size: 22px; font-weight: 700; margin: 0 0 8px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <p class="brand">EasyPay</p>
+
+  <!-- Step 1: amount + number -->
+  <section class="card" id="s-pay" hidden>
+    <h1 id="merchant"></h1>
+    <p class="amount" id="amount"></p>
+    <p class="desc" id="desc"></p>
+    <label for="phone">Your MoMo number</label>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="078 123 4567">
+    <p class="hint">We will send an approval request to this number.</p>
+    <button class="primary" id="send">Send</button>
+    <p class="error" id="err1" role="alert"></p>
+  </section>
+
+  <!-- Step 2: where is the money going -->
+  <section class="card" id="s-confirm" hidden>
+    <h1>You are about to pay</h1>
+    <p class="amount" id="amount2"></p>
+    <div class="dest">
+      <p class="who" id="rName"></p>
+      <p class="num" id="rNum"></p>
+      <span class="tag" id="rTag"></span>
+    </div>
+    <div class="row"><span>Paying from</span><b id="payer"></b></div>
+    <br>
+    <button class="primary" id="confirm">Confirm and pay</button>
+    <button class="ghost" id="back">Change number</button>
+    <p class="error" id="err2" role="alert"></p>
+  </section>
+
+  <!-- Step 3: waiting for the phone approval -->
+  <section class="card" id="s-wait" hidden>
+    <div class="spinner"></div>
+    <p class="big">Approve on your phone</p>
+    <p class="desc">Enter your MoMo PIN when the prompt appears. This page updates by itself.</p>
+  </section>
+
+  <!-- Step 4: result -->
+  <section class="card" id="s-done" hidden>
+    <p class="big" id="doneTitle"></p>
+    <p class="desc" id="doneText"></p>
+    <a id="ret" class="primary" hidden style="display:block;text-align:center;text-decoration:none;padding:14px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-weight:700">Back to the shop</a>
+  </section>
+</main>
+
+<script>
+const id = location.pathname.split('/').pop();
+const $ = (x) => document.getElementById(x);
+const money = (a, c) => `${Number(a).toLocaleString()} ${c}`;
+let info, pollTimer;
+
+function show(name) {
+  for (const s of ['pay', 'confirm', 'wait', 'done']) $('s-' + s).hidden = s !== name;
+}
+async function api(path, body) {
+  const res = await fetch(`/public/payments/${id}${path}`, body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong. Try again.');
+  return data;
+}
+
+function finish(status) {
+  clearInterval(pollTimer);
+  const ok = status === 'SUCCESSFUL';
+  $('doneTitle').textContent = ok ? 'Payment received' : status === 'EXPIRED' ? 'Payment link expired' : 'Payment not completed';
+  $('doneTitle').className = 'big ' + (ok ? 'ok' : 'bad');
+  $('doneText').textContent = ok
+    ? `${money(info.amount, info.currency)} was paid to ${info.merchantName}.`
+    : status === 'EXPIRED' ? 'Go back to the shop and start a new payment.'
+    : 'No money was taken. You can go back and try again.';
+  if (info.returnUrl) { $('ret').href = info.returnUrl; $('ret').hidden = false; }
+  show('done');
+}
+
+function poll() {
+  let tries = 0;
+  pollTimer = setInterval(async () => {
+    try {
+      const { status } = await api('/status');
+      if (status !== 'PENDING') finish(status);
+      else if (++tries > 60) { clearInterval(pollTimer); $('doneTitle').textContent = 'Still waiting'; finish('FAILED'); }
+    } catch {}
+  }, 3000);
+}
+
+async function init() {
+  try { info = await api(''); } catch (e) { document.body.innerHTML = '<p style="color:#fff">Payment not found.</p>'; return; }
+  $('merchant').textContent = `Pay ${info.merchantName}`;
+  $('amount').textContent = money(info.amount, info.currency);
+  $('desc').textContent = info.description || '';
+  if (info.status === 'PENDING') { show('wait'); poll(); }
+  else if (info.status !== 'CREATED') finish(info.status);
+  else show('pay');
+}
+
+$('send').onclick = async () => {
+  $('err1').textContent = ''; $('send').disabled = true;
+  try {
+    const r = await api('/prepare', { phone: $('phone').value });
+    $('amount2').textContent = money(r.amount, r.currency);
+    $('rName').textContent = r.recipient.name;
+    $('rNum').textContent = r.recipient.number;
+    $('rTag').textContent = r.recipient.verified ? 'Name registered with MoMo' : 'Name provided by the shop';
+    $('rTag').className = 'tag' + (r.recipient.verified ? '' : ' warn');
+    $('payer').textContent = r.payerPhone;
+    show('confirm');
+  } catch (e) { $('err1').textContent = e.message; }
+  $('send').disabled = false;
+};
+$('back').onclick = () => show('pay');
+$('confirm').onclick = async () => {
+  $('err2').textContent = ''; $('confirm').disabled = true;
+  try { await api('/confirm', {}); show('wait'); poll(); }
+  catch (e) { $('err2').textContent = e.message; }
+  $('confirm').disabled = false;
+};
+init();
+</script>
+</body>
+</html>

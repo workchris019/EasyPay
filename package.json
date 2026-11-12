@@ -1,0 +1,21 @@
+{
+  "name": "easypay",
+  "version": "1.0.0",
+  "description": "EasyPay - a MoMo payment gateway API (MTN sandbox first)",
+  "main": "server.js",
+  "scripts": {
+    "start": "nodemon server.js",
+    "dev": "node --watch server.js",
+    "provision": "node scripts/provision-sandbox.js",
+    "seed": "node scripts/seed-merchant.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.24.8",
+    "nodemon": "^3.1.14"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

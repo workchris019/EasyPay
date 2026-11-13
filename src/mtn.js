@@ -33,7 +33,6 @@ async function authHeaders(extra = {}) {
 async function requestToPay({ amount, currency, payerPhone, externalId, payerMessage, payeeNote, callbackUrl }) {
   const referenceId = crypto.randomUUID();
   const extra = { 'X-Reference-Id': referenceId, 'Content-Type': 'application/json' };
-  if (callbackUrl && callbackUrl.startsWith('https://')) extra['X-Callback-Url'] = callbackUrl;
   const res = await fetch(`${BASE}/collection/v1_0/requesttopay`, {
     method: 'POST',
     headers: await authHeaders(extra),
